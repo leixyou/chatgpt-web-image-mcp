@@ -75,7 +75,7 @@ async function findPromptBox(page, selectors, timeoutMs = 20000) {
     return promptBox;
   } catch (error) {
     throw new UserFacingError(
-      "The ChatGPT prompt box is unavailable. Open the dedicated profile and sign in first.",
+      "The ChatGPT prompt box is unavailable. Open the configured Chrome session and sign in first.",
       "CHATGPT_LOGIN_REQUIRED",
       { cause: error },
     );

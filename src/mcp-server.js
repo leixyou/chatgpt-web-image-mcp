@@ -16,7 +16,8 @@ export function createServer(config = loadConfig(), dependencies = {}) {
     "check_chatgpt_image_browser",
     {
       title: "Check ChatGPT image browser",
-      description: "Check whether the dedicated local Chrome profile is signed in and ready.",
+      description:
+        "Check whether the configured local Chrome session (CDP attachment or managed profile) is signed in and ready.",
       inputSchema: {
         surface: z.enum(["chat", "images"]).optional().describe("ChatGPT web surface to check"),
         chatgpt_url: z
@@ -82,7 +83,7 @@ export function createServer(config = loadConfig(), dependencies = {}) {
     {
       title: "Generate image in ChatGPT web",
       description:
-        "Use the operator's dedicated, logged-in local ChatGPT web session to generate an image and return the captured image content. Calls are serialized.",
+        "Use the operator's configured, logged-in local ChatGPT web session to generate an image and return the captured image content. Calls are serialized.",
       inputSchema: {
         prompt: z.string().min(1).max(12000).describe("Image generation or editing prompt"),
         source_images: z

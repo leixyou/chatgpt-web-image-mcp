@@ -1,6 +1,6 @@
 # ChatGPT Web Image MCP
 
-一个独立的本地 MCP/CLI 工具：复用专用 Chrome profile 中已经登录的 ChatGPT 网页会话，通过固定 ChatGPT 项目或 `https://chatgpt.com/images/` 专用输入框提交生图、改图提示词，等待网页结果，并把图片保存到本机后作为 MCP `image` 内容返回给调用它的 AI。它支持可复用的人物档案和画风档案，并能自动创建、配置和记住一个固定项目 URL。
+一个独立的本地 MCP/CLI 工具：通过自行管理的专用 Chrome profile，或通过 CDP 连接一个已经开启远程调试的 Chrome，复用已登录的 ChatGPT 网页会话。它会通过固定 ChatGPT 项目或 `https://chatgpt.com/images/` 专用输入框提交生图、改图提示词，等待网页结果，并把图片保存到本机后作为 MCP `image` 内容返回给调用它的 AI。它支持可复用的人物档案和画风档案，并能自动创建、配置和记住一个固定项目 URL。
 
 它不依赖 ComfyUI，不包含 workflow、模型权重、视频链路、OpenAI API key、Gateway、隧道或公网 HTTP 服务。
 
@@ -17,7 +17,7 @@
 generate_chatgpt_web_image
         |
         v
-专用 Chrome profile -> 固定项目/chat surface 或 images surface -> 图片生成结果
+专用 Chrome profile 或本机 CDP Chrome -> 固定项目/chat surface 或 images surface -> 图片生成结果
         |
         v
 本机 outputs 目录 + MCP image content
@@ -42,7 +42,7 @@ npm install
 
 可选配置参考 [.env.example](./.env.example)。本项目不会自动加载 `.env`；请在 shell 或 MCP 客户端的 `env` 中设置变量。
 
-## 第一次登录
+## 专用 Profile 模式首次登录
 
 ```bash
 npm run login
@@ -55,6 +55,8 @@ npm run login
 ```
 
 在打开的 Chrome 窗口中手动登录 ChatGPT。工具检测到输入框后会退出，登录状态保留在该专用 profile。不要把此目录复制给别人或提交到 Git。
+
+如果使用 `CHATGPT_CDP_URL`，工具不会启动或复制 profile；请先在被连接的 Chrome 中完成登录，再运行检查命令。
 
 检查状态：
 
@@ -264,37 +266,72 @@ codex mcp add chatgpt-web-image -- \
 
 同一个 MCP 进程中的调用会严格串行，避免多个请求同时操作一个输入框。
 
-## 使用 CDP 连接现有专用 Chrome
+## 使用 CDP 连接现有 Chrome
 
-如果你不希望 MCP 自己启动 Chrome，可以手动启动一个专用调试实例：
+设置 `CHATGPT_CDP_URL` 后，MCP 不再启动 Chrome，而是连接一个已经开启远程调试的 Chrome。它只复用与目标 URL 完全一致的标签；没有匹配项时会新开标签，不会把普通网页或其他 ChatGPT 对话导航走。MCP 退出时也不会关闭该 Chrome。
 
-macOS：
+> [!IMPORTANT]
+> 从 Chrome 136 起，`--remote-debugging-port` 和 `--remote-debugging-pipe` 对默认 Chrome 数据目录不再生效。正常安装后一直使用的默认“日常 Chrome”无法原地开启 CDP；Chrome 必须以 `--user-data-dir` 指向非默认数据目录启动。这个限制来自 [Chrome 官方安全变更](https://developer.chrome.com/blog/remote-debugging-port)。本工具不会通过符号链接、复制 Cookie 或修改加密数据来绕过它。
+
+如果你的日常 Chrome 本来就使用非默认数据目录，可以退出该实例后，用**同一个非默认目录**重新启动，因此不需要另建 Chrome Profile。普通默认目录则不能采用这一方式。
+
+macOS 启动示例：
+
 
 ```bash
 open -na "Google Chrome" --args \
+  --remote-debugging-address=127.0.0.1 \
   --remote-debugging-port=9222 \
-  --user-data-dir="$HOME/.chatgpt-web-image-mcp/chrome-profile"
+  --user-data-dir="/ABSOLUTE/NON_DEFAULT/CHROME_DATA_DIR"
 export CHATGPT_CDP_URL=http://127.0.0.1:9222
 ```
 
-Linux：
+Linux 启动示例：
 
 ```bash
 google-chrome \
+  --remote-debugging-address=127.0.0.1 \
   --remote-debugging-port=9222 \
-  --user-data-dir="$HOME/.chatgpt-web-image-mcp/chrome-profile"
+  --user-data-dir="/ABSOLUTE/NON_DEFAULT/CHROME_DATA_DIR"
 export CHATGPT_CDP_URL=http://127.0.0.1:9222
 ```
 
-默认只允许 loopback CDP。远程 CDP 等同于远程浏览器控制，不应直接暴露到公网。
+先确认端点可用，再启动 CLI 或 MCP：
+
+```bash
+curl --fail --silent --show-error http://127.0.0.1:9222/json/version
+node bin/chatgpt-web-image.js check
+```
+
+Codex MCP 的 CDP 配置示例：
+
+```toml
+[mcp_servers.chatgpt-web-image]
+command = "node"
+args = ["/ABSOLUTE/PATH/chatgpt-web-image-mcp/src/mcp-server.js"]
+
+[mcp_servers.chatgpt-web-image.env]
+CHATGPT_CDP_URL = "http://127.0.0.1:9222"
+CHATGPT_IMAGE_OUTPUT_DIR = "/ABSOLUTE/PATH/TO/outputs"
+CHATGPT_SETTINGS_FILE = "/ABSOLUTE/PATH/TO/settings.json"
+CHATGPT_WEB_SURFACE = "chat"
+```
+
+新增或修改 MCP 的环境变量后，需要重启 Codex 应用，使已存活的 stdio
+server 进程退出。旧进程不会动态获得新的 `CHATGPT_CDP_URL`；本工具在
+新进程的 CDP 连接失败时会直接返回 `CDP_UNREACHABLE`，绝不回退启动另一个 profile。
+
+`CHATGPT_CDP_URL` 与 `CHATGPT_CHROME_USER_DATA_DIR` 二选一；CDP 模式下后者不会被使用。默认只允许 loopback CDP。远程 CDP 等同于远程浏览器控制，不应直接暴露到公网。
 
 ## 安全边界
 
 - 只提供本地 stdio MCP，不监听公网端口。
+- 自行启动的 Chrome 显式开启 Chromium sandbox，不使用 `--no-sandbox`；否则 Google/OpenAI 登录可能拒绝该浏览器。
 - 只允许导航到 `https://chatgpt.com` 及其子域。
 - 不读取或输出 Cookie、Local Storage、账号 token、环境变量或 profile 内容。
 - 固定项目 URL 和人物/画风档案只写入本机设置文件，不进入 npm 包；该文件不保存浏览器凭据。
 - 不复制用户日常 Chrome profile，默认使用独立 profile。
+- 操作者显式配置 CDP 时，工具拥有该浏览器上下文内页面的控制能力；应关闭敏感页面，并只连接可信的本机端点。
 - 图片编辑的本地输入目录默认是空白名单。
 - 单图默认最大 20 MiB，超限时尝试可见区域截图，仍超限则失败。
 - 错误返回经过清洗，不把 Playwright stack trace 返回给 MCP 调用者。
@@ -326,6 +363,7 @@ node bin/chatgpt-web-image.js generate --surface images --prompt "生成一个�
 - 验证码、二次登录、地区限制、账号额度和内容安全拦截需要操作者在可见浏览器中处理。
 - 网页端不提供稳定的模型响应元数据，本工具不会声称验证了底层具体模型。
 - CDP 模式不会主动关闭操作者的 Chrome；专用 profile 模式在 CLI/MCP 正常退出时会关闭自己启动的窗口。
+- Chrome 136 及更高版本不允许对默认 Chrome 数据目录开启 CDP；默认日常 Profile 不能被本工具原地接管。
 
 ## License
 

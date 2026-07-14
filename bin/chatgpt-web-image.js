@@ -32,9 +32,11 @@ Options:
   -h, --help              Show this help
 `;
 
-async function runLogin(generator, args) {
+async function runLogin(generator, args, config) {
   process.stderr.write(
-    "A dedicated Chrome profile is open. Sign in to ChatGPT in that window; this command will continue when the prompt box is ready.\n",
+    config.cdpUrl
+      ? "Connected to the configured Chrome CDP endpoint. Sign in to ChatGPT in that browser; this command will continue when the prompt box is ready.\n"
+      : "A dedicated Chrome profile is open. Sign in to ChatGPT in that window; this command will continue when the prompt box is ready.\n",
   );
   const status = await generator.login({
     chatgpt_url: args.chatgpt_url || undefined,
@@ -57,7 +59,7 @@ async function main() {
   const generator = new ImageGenerator(config);
   try {
     if (args.command === "login") {
-      await runLogin(generator, args);
+      await runLogin(generator, args, config);
       return;
     }
     if (args.command === "check") {
